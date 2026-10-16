@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WithCat引継ぎアプリ（写真・名簿管理対応）</title>
+    <title>WithCat引継ぎアプリ（完全自動リアルタイム同期）</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase App & Realtime Database CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <style>
         body { font-family: 'Inter', 'Hiragino Kaku Gothic ProN', sans-serif; -webkit-tap-highlight-color: transparent; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -25,14 +28,14 @@
                 </div>
                 <div>
                     <h1 class="font-bold text-sm sm:text-base leading-tight">WithCat引継ぎアプリ</h1>
-                    <p class="text-[10px] text-teal-100" id="current-date-display">写真・名簿管理対応版</p>
+                    <p class="text-[10px] text-teal-100 flex items-center gap-1">
+                        <span id="sync-status-dot" class="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+                        <span id="current-date-display">自動同期中...</span>
+                    </p>
                 </div>
             </div>
             <div class="flex gap-1.5">
-                <button onclick="resetDailyChecks()" class="bg-teal-600 hover:bg-teal-500 border border-teal-500 text-[11px] px-2 py-1.5 rounded-lg font-medium transition flex items-center gap-1" title="日次チェックを朝の状態に戻す">
-                    <i class="fa-solid fa-rotate-right"></i>日次更新
-                </button>
-                <button onclick="copyLineReport()" class="bg-emerald-600 hover:bg-emerald-500 text-[11px] px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1 shadow-xs" title="LINEにそのまま貼れる形式でコピー">
+                <button onclick="copyLineReport()" class="bg-emerald-600 hover:bg-emerald-500 text-[11px] px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1 shadow-xs" title="LINEにそのまま貼れる形式でコピー">
                     <i class="fa-solid fa-clipboard-user"></i>LINE用
                 </button>
             </div>
@@ -64,7 +67,7 @@
 
     <!-- トースト通知 -->
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-4 py-2.5 rounded-full shadow-lg z-50 hidden transition-opacity">
-        保存しました
+        同期しました
     </div>
 
     <main class="max-w-md mx-auto p-3 space-y-3">
@@ -106,17 +109,14 @@
             </div>
 
             <!-- シフト申し送りフォーム -->
-        <div class="bg-white p-3.5 rounded-xl shadow-xs border border-slate-200">
-            <div class="flex justify-between items-center mb-2.5">
-                <h2 class="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
-                    <i class="fa-solid fa-comments text-teal-600"></i> シフト申し送り・連絡ボード
-                </h2>
-                <!-- AIアシスタント起動ボタン -->
-                <button type="button" onclick="openAiModal()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold px-2 py-1 rounded-lg border border-indigo-200 transition flex items-center gap-1">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i> AI文章サポート
-                </button>
-            </div>
-            <form id="handover-form" onsubmit="addHandover(event)" class="space-y-2.5">
+            <div class="bg-white p-3.5 rounded-xl shadow-xs border border-slate-200">
+                <div class="flex justify-between items-center mb-2.5">
+                    <h2 class="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                        <i class="fa-solid fa-comments text-teal-600"></i> シフト申し送り・連絡ボード
+                    </h2>
+                    <span class="text-[10px] text-slate-400 font-medium" id="form-current-datetime">日時自動設定</span>
+                </div>
+                <form id="handover-form" onsubmit="addHandover(event)" class="space-y-2.5">
                     <div class="grid grid-cols-12 gap-2">
                         <select id="handover-shift" class="col-span-4 text-xs px-2 py-2 rounded-lg border border-slate-200 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500">
                             <option value="朝シフト">☀️ 朝番</option>
@@ -174,7 +174,7 @@
             </div>
 
             <div class="text-[11px] text-slate-500 px-1 flex justify-between items-center">
-                <span>※食欲・排便はタップで切替可能</span>
+                <span>※全員の変更がリアルタイムに反映されます</span>
                 <span id="filtered-count-label">0頭表示中</span>
             </div>
 
@@ -212,7 +212,6 @@
             <form id="cat-form" onsubmit="saveCat(event)" class="space-y-3">
                 <input type="hidden" id="cat-id">
                 
-                <!-- 写真アップロード -->
                 <div class="flex items-center gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                     <div id="photo-preview-box" class="w-14 h-14 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center shrink-0 border border-slate-300">
                         <i class="fa-solid fa-cat text-slate-400 text-xl"></i>
@@ -266,38 +265,22 @@
         </div>
     </div>
 
-    <!-- AI文章作成サポートモーダル -->
-    <div id="ai-modal" class="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-md rounded-2xl p-4 shadow-xl space-y-3">
-            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                <i class="fa-solid fa-wand-magic-sparkles text-indigo-600"></i> Gemini AI サポート（申し送り作成支援）
-            </h3>
-            <p class="text-[11px] text-slate-500">
-                メモ書きや今日のトピックを入力すると、スタッフの皆さんに伝わりやすい丁寧な引き継ぎ文章をAIが自動作成します。
-            </p>
-            <div>
-                <label class="block text-[11px] font-bold text-slate-600 mb-1">伝えたい要点（箇条書きOK）</label>
-                <textarea id="ai-prompt-input" rows="3" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例：みけ美ちゃんがご飯完食した、お薬も飲めた。トイレの砂補充した。"></textarea>
-            </div>
-            <div id="ai-loading" class="hidden text-center py-2 text-indigo-600 text-xs font-bold animate-pulse">
-                <i class="fa-solid fa-spinner fa-spin mr-1"></i> AIが文章を考えています...
-            </div>
-            <div class="flex gap-2 pt-1">
-                <button onclick="closeAiModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs">キャンセル</button>
-                <button onclick="generateAiHandover()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs shadow-sm flex items-center justify-center gap-1">
-                    <i class="fa-solid fa-sparkles"></i> 文章を生成する
-                </button>
-            </div>
-        </div>
-    </div>
-
     <script>
+        // Firebase Public Config for Zero-setup Realtime Sync
+        const firebaseConfig = {
+            databaseURL: "https://withcat-rescue-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const rootRef = db.ref('shelter_data_v1');
+
         const today = new Date();
         const days = ['日', '月', '火', '水', '木', '金', '土'];
-        document.getElementById('current-date-display').innerText = 
-            `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日(${days[today.getDay()]}) シフト共有`;
+        const dateStringFormatted = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日(${days[today.getDay()]})`;
+        document.getElementById('current-date-display').innerText = `${dateStringFormatted} 自動同期中`;
+        document.getElementById('form-current-datetime').innerText = `${dateStringFormatted}`;
 
-        // 初期30匹データ
+        // 初期30頭データ
         const defaultCats = [
             { id: '1', name: 'みけ美', gender: 'メス / 三毛', status: 'care', appetite: '◎', stool: '良', health: '右目少し涙目なのでコットンで拭いてあげてください。', photo: '' },
             { id: '2', name: 'チャチャ', gender: 'オス / 茶トラ', status: 'care', appetite: '△', stool: '良', health: '少し警戒心あり。ウェットトッピングで完食。', photo: '' },
@@ -326,24 +309,46 @@
             { id: '25', name: 'エース', gender: 'オス / 黒', status: 'normal', appetite: '◎', stool: '良', health: '元気。', photo: '' },
             { id: '26', name: 'ルル', gender: 'メス / 三毛', status: 'normal', appetite: '◎', stool: '良', health: '良好。', photo: '' },
             { id: '27', name: 'キラ', gender: 'オス / 白', status: 'care', appetite: '△', stool: '良', health: '環境変化で緊張気味。', photo: '' },
-            { id: '28', name: 'ユキ', gender: 'メス / 白', status: 'normal', appetite: '◎', stool: '良', health: '良好。', photo: '' },
+            { id: '28', name: 'ユキ', gender: 'メs / 白', status: 'normal', appetite: '◎', stool: '良', health: '良好。', photo: '' },
             { id: '29', name: 'ゴロウ', gender: 'オス / キジ', status: 'normal', appetite: '◎', stool: '良', health: 'おやつ完食。', photo: '' },
             { id: '30', name: 'ハチ', gender: 'オス / 白黒', status: 'normal', appetite: '◎', stool: '良', health: '元気。', photo: '' }
         ];
 
-        let cats = JSON.parse(localStorage.getItem('rescue_photo_cats_30')) || defaultCats;
-        let handovers = JSON.parse(localStorage.getItem('rescue_photo_handovers')) || [
-            { id: '1', shift: '朝シフト', poster: '鈴木', category: '猫の様子', catName: 'ハナ', text: '朝のごはん完食しました！少し軟便だったので夕方トイレ確認お願いします。', time: '今日 09:30', checks: 2 }
-        ];
-        let facilityChecks = JSON.parse(localStorage.getItem('rescue_photo_fac_checks')) || [
+        let cats = defaultCats;
+        let handovers = [];
+        let facilityChecks = [
             { id: 'clean', label: '掃除・消毒', done: true },
             { id: 'water', label: '全室給水', done: true },
             { id: 'trash', label: 'ゴミ回収', done: false },
             { id: 'lock', label: '空調・戸締', done: false }
         ];
-        let facilityStatus = localStorage.getItem('rescue_photo_fac_memo') || '【物資連絡】猫砂ストック残り3袋 / エアコン25度稼働中';
+        let facilityStatus = '【物資連絡】猫砂ストック残り3袋 / エアコン25度稼働中';
         let currentFilter = 'all';
         let tempPhotoBase64 = '';
+
+        // Firebaseリアルタイムリスナーのセットアップ
+        rootRef.on('value', (snapshot) => {
+            const val = snapshot.val();
+            if (val) {
+                if (val.cats) cats = val.cats;
+                if (val.handovers) handovers = val.handovers;
+                if (val.facilityChecks) facilityChecks = val.facilityChecks;
+                if (val.facilityStatus) facilityStatus = val.facilityStatus;
+                refreshAllUI();
+            } else {
+                // 初回のみデフォルトデータを書き込む
+                pushDataToCloud();
+            }
+        });
+
+        function pushDataToCloud() {
+            rootRef.set({
+                cats: cats,
+                handovers: handovers,
+                facilityChecks: facilityChecks,
+                facilityStatus: facilityStatus
+            });
+        }
 
         function showToast(msg) {
             const t = document.getElementById('toast');
@@ -353,13 +358,20 @@
         }
 
         function saveData() {
-            localStorage.setItem('rescue_photo_cats_30', JSON.stringify(cats));
-            localStorage.setItem('rescue_photo_handovers', JSON.stringify(handovers));
-            localStorage.setItem('rescue_photo_fac_checks', JSON.stringify(facilityChecks));
-            localStorage.setItem('rescue_photo_fac_memo', facilityStatus);
+            pushDataToCloud();
             updateDashboardStats();
             renderPriorityPreview();
             populateCatSelect();
+        }
+
+        function refreshAllUI() {
+            updateDashboardStats();
+            renderFacilityToggles();
+            renderPriorityPreview();
+            populateCatSelect();
+            renderHandovers();
+            renderCats();
+            renderRoster();
         }
 
         function updateDashboardStats() {
@@ -402,7 +414,7 @@
             priorityCats.forEach(c => {
                 const imgTag = c.photo 
                     ? `<img src="${c.photo}" class="w-9 h-9 rounded-full object-cover border border-amber-300 shrink-0">` 
-                    : `<div class="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs shrink-0"><i class="fa-solid cat">🐱</i></div>`;
+                    : `<div class="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs shrink-0">🐱</div>`;
                 html += `
                     <div onclick="openCatModal('${c.id}')" class="bg-white p-2.5 rounded-lg border border-amber-200 shadow-2xs shrink-0 w-44 cursor-pointer hover:border-amber-400 transition">
                         <div class="flex items-center gap-2 mb-1">
@@ -449,79 +461,6 @@
             document.getElementById('facility-modal').classList.add('hidden');
         }
 
-        // --- Gemini API連携機能 ---
-        function openAiModal() {
-            document.getElementById('ai-prompt-input').value = '';
-            document.getElementById('ai-loading').classList.add('hidden');
-            document.getElementById('ai-modal').classList.remove('hidden');
-        }
-
-        function closeAiModal() {
-            document.getElementById('ai-modal').classList.add('hidden');
-        }
-
-        async function generateAiHandover() {
-            const promptText = document.getElementById('ai-prompt-input').value.trim();
-            if (!promptText) {
-                showToast('伝えたい要点を入力してください');
-                return;
-            }
-
-            const loadingEl = document.getElementById('ai-loading');
-            loadingEl.classList.remove('hidden');
-
-            const systemPrompt = "あなたは保護猫シェルターのベテランボランティアスタッフです。入力された箇条書きやメモから、次のシフトのスタッフにわかりやすく丁寧で温かみのある引き継ぎ・申し送り文章を1〜2文で簡潔に作成してください。余計な前置きは不要です。";
-            const userQuery = `以下のメモを元に、引き継ぎ用の文章を作成してください:\n${promptText}`;
-            
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
-
-            const payload = {
-                contents: [{ parts: [{ text: userQuery }] }],
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }]
-                }
-            };
-
-            // 指数バックオフ付きフェッチ関数
-            async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    return await response.json();
-                } catch (error) {
-                    if (retries > 0) {
-                        await new Promise(res => setTimeout(res, delay));
-                        return fetchWithRetry(url, options, retries - 1, delay * 2);
-                    }
-                    throw error;
-                }
-            }
-
-            try {
-                const result = await fetchWithRetry(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const candidate = result.candidates?.[0];
-                if (candidate && candidate.content?.parts?.[0]?.text) {
-                    const generatedText = candidate.content.parts[0].text.trim();
-                    document.getElementById('handover-text').value = generatedText;
-                    closeAiModal();
-                    showToast('AIが申し送り文面を作成しました！');
-                } else {
-                    throw new Error('予期せぬレスポンス構造です');
-                }
-            } catch (err) {
-                console.error(err);
-                showToast('AI文章の生成に失敗しました。時間を置いて再度お試しください。');
-            } finally {
-                loadingEl.classList.add('hidden');
-            }
-        }
-
         function saveFacilityStatus() {
             facilityStatus = document.getElementById('facility-input-text').value;
             saveData();
@@ -538,9 +477,9 @@
             const catName = document.getElementById('handover-cat-link').value;
             const text = document.getElementById('handover-text').value;
             const now = new Date();
-            const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-            const newPost = { id: Date.now().toString(), shift, poster, category, catName, text, time: timeStr, checks: 0 };
+            const newPost = { id: Date.now().toString(), dateStr: dateStringFormatted, shift, poster, category, catName, text, time: timeStr, checks: 0 };
             handovers.unshift(newPost);
             saveData();
 
@@ -579,7 +518,8 @@
                 html += `
                     <div class="bg-white p-3 rounded-xl shadow-2xs border border-slate-200 space-y-1.5">
                         <div class="flex justify-between items-center text-xs">
-                            <div class="flex items-center gap-1.5">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold"><i class="fa-regular fa-calendar mr-1"></i>${escapeHtml(h.dateStr || dateStringFormatted)}</span>
                                 <span class="bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded text-[10px] font-bold">${escapeHtml(h.shift)}</span>
                                 <span class="font-bold text-slate-800">${escapeHtml(h.poster)}</span>
                                 <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor}">${escapeHtml(h.category)}</span>
@@ -626,15 +566,6 @@
             });
             saveData();
             renderCats();
-        }
-
-        function resetDailyChecks() {
-            cats = cats.map(c => ({ ...c, appetite: 'ー', stool: '未' }));
-            facilityChecks = facilityChecks.map(f => ({ ...f, done: false }));
-            saveData();
-            renderFacilityToggles();
-            renderCats();
-            showToast('本日の食欲・排便チェックをリセットしました');
         }
 
         function setFilter(filterType) {
@@ -823,7 +754,7 @@
             closeCatModal();
             renderCats();
             renderRoster();
-            showToast('猫情報を保存しました');
+            showToast('猫情報をクラウドに保存しました');
         }
 
         function deleteCat(id) {
@@ -837,9 +768,7 @@
         }
 
         function copyLineReport() {
-            const d = new Date();
-            const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-            let text = `【WithCat引継ぎレポート (${dateStr})】\n\n`;
+            let text = `【WithCat引継ぎレポート (${dateStringFormatted})】\n\n`;
 
             text += `■ 施設・物資状況\n`;
             facilityChecks.forEach(f => {
@@ -859,12 +788,12 @@
             }
             text += `\n`;
 
-            text += `■ 最近の申し送り事項\n`;
+            text += `■ シフト申し送り事項\n`;
             if (handovers.length === 0) {
                 text += `特になし\n`;
             } else {
                 handovers.slice(0, 3).forEach(h => {
-                    text += `[${h.shift}] ${h.poster} (${h.time})\n`;
+                    text += `[${h.dateStr || dateStringFormatted} ${h.shift}] ${h.poster} (${h.time})\n`;
                     if(h.catName) text += `対象: ${h.catName}\n`;
                     text += `${h.text}\n---\n`;
                 });
@@ -902,13 +831,6 @@
             if (!str) return '';
             return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         }
-
-        updateDashboardStats();
-        renderFacilityToggles();
-        renderPriorityPreview();
-        populateCatSelect();
-        renderHandovers();
-        renderRoster();
     </script>
 </body>
 </html>
